@@ -16,6 +16,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
@@ -62,7 +63,7 @@ class TransactionEventServiceImplTest {
         
         verify(restTemplate).postForEntity(urlCaptor.capture(), any(), eq(String.class));
         
-        assertThat(urlCaptor.getValue()).isEqualTo("http://localhost:8080/commitTransaction");
+        assertThat(urlCaptor.getValue()).isEqualTo("http://localhost:8080/transactions/999/commit");
     }
 
     @Test
@@ -86,7 +87,36 @@ class TransactionEventServiceImplTest {
         // When: Processing transaction authorized event
         transactionEventService.processTransactionAuthorized(transactionAuthorizedEvent);
 
-        // Then: Verify the REST call was made
-        verify(restTemplate).postForEntity(eq("http://localhost:8080/commitTransaction"), any(), eq(String.class));
+        // Then: Verify the REST call was made with correct URL and payload
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(restTemplate).postForEntity(eq("http://localhost:8080/transactions/999/commit"), payloadCaptor.capture(), eq(String.class));
+        
+        // Verify the payload contains both transactionId and holdId
+        Object capturedPayload = payloadCaptor.getValue();
+        assertThat(capturedPayload).isNotNull();
+    }
+
+    @Test
+    void processTransactionAuthorized_verifyRequestContainsHoldId() {
+        // Given: Mock successful response
+        given(restTemplate.postForEntity(any(String.class), any(), eq(String.class)))
+                .willReturn(ResponseEntity.ok("Success"));
+
+        // When: Processing transaction authorized event
+        transactionEventService.processTransactionAuthorized(transactionAuthorizedEvent);
+
+        // Then: Verify the REST call includes holdId in the request body
+        ArgumentCaptor<HttpEntity<?>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
+        verify(restTemplate).postForEntity(any(String.class), entityCaptor.capture(), eq(String.class));
+        
+        HttpEntity<?> capturedEntity = entityCaptor.getValue();
+        Object body = capturedEntity.getBody();
+        
+        assertThat(body).isInstanceOf(com.creditx.posting.dto.CommitTransactionRequest.class);
+        com.creditx.posting.dto.CommitTransactionRequest request = (com.creditx.posting.dto.CommitTransactionRequest) body;
+        assertThat(request)
+                .isNotNull()
+                .extracting("transactionId", "holdId")
+                .containsExactly(999L, 12345L);
     }
 }

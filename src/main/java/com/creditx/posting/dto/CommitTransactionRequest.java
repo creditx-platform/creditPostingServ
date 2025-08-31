@@ -13,4 +13,6 @@ import lombok.NoArgsConstructor;
 public class CommitTransactionRequest {
     @NotNull
     private Long transactionId;
+    @NotNull
+    private Long holdId;
 }

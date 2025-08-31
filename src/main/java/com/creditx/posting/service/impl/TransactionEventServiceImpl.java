@@ -33,6 +33,7 @@ public class TransactionEventServiceImpl implements TransactionEventService {
         // Prepare to settle by calling CMS /commitTransaction
         CommitTransactionRequest commitRequest = CommitTransactionRequest.builder()
                 .transactionId(event.getTransactionId())
+                .holdId(event.getHoldId())
                 .build();
 
         sendCommitTransactionRequest(commitRequest);
@@ -47,7 +48,8 @@ public class TransactionEventServiceImpl implements TransactionEventService {
 
         try {
             log.info("Sending commit transaction request to CMS for transaction: {}", request.getTransactionId());
-            restTemplate.postForEntity(creditMainServiceUrl + "/commitTransaction", entity, String.class);
+            String url = creditMainServiceUrl + "/transactions/" + request.getTransactionId() + "/commit";
+            restTemplate.postForEntity(url, entity, String.class);
             log.info("Successfully sent commit transaction request for transaction: {}", request.getTransactionId());
         } catch (Exception e) {
             log.error("Failed to send commit transaction request for transaction: {}", request.getTransactionId(), e);
