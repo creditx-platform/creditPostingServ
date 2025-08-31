@@ -1,4 +1,4 @@
-package com.creditx.creditPostingServ;
+package com.creditx.posting;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
