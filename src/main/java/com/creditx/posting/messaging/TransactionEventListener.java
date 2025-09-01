@@ -4,8 +4,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.Message;
 
+import com.creditx.posting.constants.EventTypes;
 import com.creditx.posting.dto.TransactionAuthorizedEvent;
 import com.creditx.posting.service.TransactionEventService;
+import com.creditx.posting.util.EventValidationUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.micrometer.tracing.Span;
@@ -30,10 +32,17 @@ public class TransactionEventListener {
             String payload = message.getPayload();
             String traceId = (String) message.getHeaders().get("X-Trace-Id");
             
+            // Validate event type before processing
+            if (!EventValidationUtils.validateEventType(message, EventTypes.TRANSACTION_AUTHORIZED)) {
+                log.warn("Skipping message with invalid event type. Expected: {}, Headers: {}, Payload: {}", 
+                        EventTypes.TRANSACTION_AUTHORIZED, message.getHeaders(), payload);
+                return;
+            }
+            
             Span span = tracer.nextSpan()
                     .name("transaction-authorized-listener")
                     .tag("service", "creditPostingServ")
-                    .tag("event.type", "transaction.authorized");
+                    .tag("event.type", EventTypes.TRANSACTION_AUTHORIZED);
                     
             if (traceId != null) {
                 span.tag("trace.parent.id", traceId);

@@ -61,6 +61,7 @@ class TransactionEventListenerIntegrationTest {
         Map<String, Object> headers = new HashMap<>();
         headers.put("X-Trace-Id", "test-trace-id");
         headers.put("X-Span-Id", "test-span-id");
+        headers.put("eventType", "transaction.authorized");
         Message<String> message = new GenericMessage<>(payload, new MessageHeaders(headers));
 
         // Mock Tracer and Span
