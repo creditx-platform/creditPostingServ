@@ -87,7 +87,7 @@ public class TransactionEventServiceImpl implements TransactionEventService {
 
         try {
             log.info("Sending commit transaction request to CMS for transaction: {}", request.getTransactionId());
-            String url = creditMainServiceUrl + "/transactions/" + request.getTransactionId() + "/commit";
+            String url = creditMainServiceUrl + "/api/transactions/" + request.getTransactionId() + "/commit";
             restTemplate.postForEntity(url, entity, String.class);
             log.info("Successfully sent commit transaction request for transaction: {}", request.getTransactionId());
         } catch (Exception e) {

@@ -22,12 +22,16 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
 
 import com.creditx.posting.dto.TransactionAuthorizedEvent;
+import com.creditx.posting.service.ProcessedEventService;
 
 @ExtendWith(MockitoExtension.class)
 class TransactionEventServiceImplTest {
 
     @Mock
     private RestTemplate restTemplate;
+    
+    @Mock
+    private ProcessedEventService processedEventService;
 
     @InjectMocks
     private TransactionEventServiceImpl transactionEventService;
@@ -47,6 +51,9 @@ class TransactionEventServiceImplTest {
                 .currency("USD")
                 .status("AUTHORIZED")
                 .build();
+        
+        // Default behavior: event not already processed
+        given(processedEventService.isEventProcessed(any(String.class))).willReturn(false);
     }
 
     @Test
@@ -63,7 +70,7 @@ class TransactionEventServiceImplTest {
         
         verify(restTemplate).postForEntity(urlCaptor.capture(), any(), eq(String.class));
         
-        assertThat(urlCaptor.getValue()).isEqualTo("http://localhost:8080/transactions/999/commit");
+        assertThat(urlCaptor.getValue()).isEqualTo("http://localhost:8080/api/transactions/999/commit");
     }
 
     @Test
@@ -89,7 +96,7 @@ class TransactionEventServiceImplTest {
 
         // Then: Verify the REST call was made with correct URL and payload
         ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
-        verify(restTemplate).postForEntity(eq("http://localhost:8080/transactions/999/commit"), payloadCaptor.capture(), eq(String.class));
+        verify(restTemplate).postForEntity(eq("http://localhost:8080/api/transactions/999/commit"), payloadCaptor.capture(), eq(String.class));
         
         // Verify the payload contains both transactionId and holdId
         Object capturedPayload = payloadCaptor.getValue();
