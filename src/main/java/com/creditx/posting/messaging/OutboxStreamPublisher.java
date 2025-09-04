@@ -9,10 +9,12 @@ import org.springframework.validation.annotation.Validated;
 
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @Validated
 @RequiredArgsConstructor
+@Slf4j
 public class OutboxStreamPublisher {
 
     private final StreamBridge streamBridge;
@@ -21,12 +23,19 @@ public class OutboxStreamPublisher {
     private String bindingName;
 
     public void publish(@NotNull String key, @NotNull String payload) {
+        log.debug("Publishing message to binding '{}' with key: {}", bindingName, key);
 
         Message<String> message = MessageBuilder
                 .withPayload(payload)
                 .setHeader("key", key)
                 .build();
 
-        streamBridge.send(bindingName, message);
+        try {
+            streamBridge.send(bindingName, message);
+            log.debug("Successfully published message with key: {}", key);
+        } catch (Exception e) {
+            log.error("Failed to publish message with key {}: {}", key, e.getMessage(), e);
+            throw e;
+        }
     }
 }
