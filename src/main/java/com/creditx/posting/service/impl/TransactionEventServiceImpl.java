@@ -17,6 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import com.creditx.posting.tracing.TransactionSpanTagger;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
@@ -27,6 +28,7 @@ public class TransactionEventServiceImpl implements TransactionEventService {
     private final RestTemplate restTemplate;
     private final ProcessedEventService processedEventService;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final TransactionSpanTagger transactionSpanTagger;
 
     @Value("${app.creditmain.url:http://localhost:8080}")
     private String creditMainServiceUrl;
@@ -34,7 +36,10 @@ public class TransactionEventServiceImpl implements TransactionEventService {
     @Override
     @Transactional
     public void processTransactionAuthorized(TransactionAuthorizedEvent event) {
-        // Generate unique event ID for deduplication
+    // Tag current span early for trace correlation
+    transactionSpanTagger.tagTransactionId(event.getTransactionId());
+
+    // Generate unique event ID for deduplication
         String eventId = EventIdGenerator.generateEventId("transaction.authorized", event.getTransactionId());
         
         // Check if event has already been processed

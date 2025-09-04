@@ -7,6 +7,7 @@ import org.springframework.messaging.Message;
 import com.creditx.posting.constants.EventTypes;
 import com.creditx.posting.dto.TransactionAuthorizedEvent;
 import com.creditx.posting.service.TransactionEventService;
+import com.creditx.posting.tracing.TransactionSpanTagger;
 import com.creditx.posting.util.EventValidationUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -21,6 +22,7 @@ import java.util.function.Consumer;
 public class TransactionEventListener {
 
     private final TransactionEventService transactionEventService;
+    private final TransactionSpanTagger transactionSpanTagger;
     private final ObjectMapper objectMapper;
 
     @Bean
@@ -38,6 +40,7 @@ public class TransactionEventListener {
             try {
                 log.info("Received transaction.authorized event: {}", payload);
                 TransactionAuthorizedEvent event = objectMapper.readValue(payload, TransactionAuthorizedEvent.class);
+                transactionSpanTagger.tagTransactionId(event.getTransactionId());
 
                 // Validate that the event has a holdId - skip events without holdId
                 if (event.getHoldId() == null) {

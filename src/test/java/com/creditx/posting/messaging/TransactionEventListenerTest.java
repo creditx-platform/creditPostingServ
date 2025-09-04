@@ -25,6 +25,7 @@ import com.creditx.posting.dto.TransactionAuthorizedEvent;
 import com.creditx.posting.service.TransactionEventService;
 import com.creditx.posting.util.EventValidationUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.creditx.posting.tracing.TransactionSpanTagger;
 
 @ExtendWith(MockitoExtension.class)
 class TransactionEventListenerTest {
@@ -33,6 +34,9 @@ class TransactionEventListenerTest {
 
     @Mock
     private ObjectMapper objectMapper;
+
+    @Mock
+    private TransactionSpanTagger transactionSpanTagger;
 
     @InjectMocks
     private TransactionEventListener transactionEventListener;
@@ -69,6 +73,7 @@ class TransactionEventListenerTest {
 
             // then
             verify(transactionEventService, times(1)).processTransactionAuthorized(event);
+            verify(transactionSpanTagger, times(1)).tagTransactionId(123L);
         }
     }
 
@@ -97,6 +102,8 @@ class TransactionEventListenerTest {
 
             // then
             verify(transactionEventService, never()).processTransactionAuthorized(event);
+            // Tagger shouldn't be called because validation failed
+            verify(transactionSpanTagger, never()).tagTransactionId(123L);
         }
     }
 }

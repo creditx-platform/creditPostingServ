@@ -29,6 +29,7 @@ import com.creditx.posting.dto.CommitTransactionRequest;
 import com.creditx.posting.dto.TransactionAuthorizedEvent;
 import com.creditx.posting.service.ProcessedEventService;
 import com.creditx.posting.util.EventIdGenerator;
+import com.creditx.posting.tracing.TransactionSpanTagger;
 
 @ExtendWith(MockitoExtension.class)
 class TransactionEventServiceImplTest {
@@ -41,6 +42,9 @@ class TransactionEventServiceImplTest {
 
     @InjectMocks
     private TransactionEventServiceImpl transactionEventService;
+
+    @Mock
+    private TransactionSpanTagger transactionSpanTagger;
 
     @BeforeEach
     void setup() {
@@ -69,6 +73,7 @@ class TransactionEventServiceImplTest {
             transactionEventService.processTransactionAuthorized(event);
 
             // then
+            verify(transactionSpanTagger, times(1)).tagTransactionId(123L);
             verify(processedEventService, times(1)).isEventProcessed(eventId);
             verify(processedEventService, times(1)).isPayloadProcessed(payloadHash);
             verify(processedEventService, times(1)).markEventAsProcessed(eventId, payloadHash, "SUCCESS");
@@ -106,6 +111,7 @@ class TransactionEventServiceImplTest {
             transactionEventService.processTransactionAuthorized(event);
 
             // then
+            verify(transactionSpanTagger, times(1)).tagTransactionId(123L);
             verify(processedEventService, times(1)).isEventProcessed(eventId);
             verify(processedEventService, never()).isPayloadProcessed(anyString());
             verify(processedEventService, never()).markEventAsProcessed(anyString(), anyString(), anyString());
@@ -133,6 +139,7 @@ class TransactionEventServiceImplTest {
             transactionEventService.processTransactionAuthorized(event);
 
             // then
+            verify(transactionSpanTagger, times(1)).tagTransactionId(123L);
             verify(processedEventService, times(1)).isEventProcessed(eventId);
             verify(processedEventService, times(1)).isPayloadProcessed(payloadHash);
             verify(processedEventService, never()).markEventAsProcessed(anyString(), anyString(), anyString());
@@ -186,6 +193,7 @@ class TransactionEventServiceImplTest {
                     .isInstanceOf(RuntimeException.class)
                     .hasMessage("Hash generation failed");
 
+            verify(transactionSpanTagger, times(1)).tagTransactionId(123L);
             verify(processedEventService, times(1)).isEventProcessed(eventId);
             verify(processedEventService, never()).isPayloadProcessed(anyString());
             verify(processedEventService, times(1)).markEventAsProcessed(eventId, "", "FAILED");
