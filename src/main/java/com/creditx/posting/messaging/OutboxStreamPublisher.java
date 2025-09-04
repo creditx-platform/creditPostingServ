@@ -5,34 +5,26 @@ import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.messaging.Message;
 import org.springframework.stereotype.Service;
+import org.springframework.validation.annotation.Validated;
 
-import io.micrometer.tracing.Tracer;
+import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 
 @Service
+@Validated
 @RequiredArgsConstructor
 public class OutboxStreamPublisher {
 
     private final StreamBridge streamBridge;
-    private final Tracer tracer;
 
     @Value("${app.outbox.binding}")
     private String bindingName;
 
-    public void publish(String key, String payload) {
-        String traceId = null;
-        String spanId = null;
-        
-        if (tracer.currentSpan() != null) {
-            traceId = tracer.currentSpan().context().traceId();
-            spanId = tracer.currentSpan().context().spanId();
-        }
-        
+    public void publish(@NotNull String key, @NotNull String payload) {
+
         Message<String> message = MessageBuilder
                 .withPayload(payload)
                 .setHeader("key", key)
-                .setHeader("X-Trace-Id", traceId)
-                .setHeader("X-Span-Id", spanId)
                 .build();
 
         streamBridge.send(bindingName, message);

@@ -3,11 +3,13 @@ package com.creditx.posting.service.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-
-import java.math.BigDecimal;
+import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,115 +17,186 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
 
+import com.creditx.posting.dto.CommitTransactionRequest;
 import com.creditx.posting.dto.TransactionAuthorizedEvent;
 import com.creditx.posting.service.ProcessedEventService;
+import com.creditx.posting.util.EventIdGenerator;
 
 @ExtendWith(MockitoExtension.class)
 class TransactionEventServiceImplTest {
 
     @Mock
     private RestTemplate restTemplate;
-    
+
     @Mock
     private ProcessedEventService processedEventService;
 
     @InjectMocks
     private TransactionEventServiceImpl transactionEventService;
 
-    private TransactionAuthorizedEvent transactionAuthorizedEvent;
-
     @BeforeEach
-    void setUp() {
+    void setup() {
         ReflectionTestUtils.setField(transactionEventService, "creditMainServiceUrl", "http://localhost:8080");
-        
-        transactionAuthorizedEvent = TransactionAuthorizedEvent.builder()
-                .transactionId(999L)
-                .holdId(12345L)
-                .issuerAccountId(1L)
-                .merchantAccountId(2L)
-                .amount(new BigDecimal("250.00"))
-                .currency("USD")
-                .status("AUTHORIZED")
-                .build();
-        
-        // Default behavior: event not already processed
-        given(processedEventService.isEventProcessed(any(String.class))).willReturn(false);
     }
 
     @Test
-    void processTransactionAuthorized_success() {
-        // Given: Mock successful response from CMS
-        given(restTemplate.postForEntity(any(String.class), any(), eq(String.class)))
-                .willReturn(ResponseEntity.ok("Success"));
+    void shouldProcessTransactionAuthorizedEvent() {
+        // given
+        TransactionAuthorizedEvent event = createTransactionAuthorizedEvent(123L, 456L);
+        String eventId = "transaction.authorized-123";
+        String payloadHash = "hash123";
 
-        // When: Processing transaction authorized event
-        transactionEventService.processTransactionAuthorized(transactionAuthorizedEvent);
+        try (MockedStatic<EventIdGenerator> mockedGenerator = Mockito.mockStatic(EventIdGenerator.class)) {
+            mockedGenerator.when(() -> EventIdGenerator.generateEventId("transaction.authorized", 123L))
+                    .thenReturn(eventId);
+            mockedGenerator.when(() -> EventIdGenerator.generatePayloadHash(anyString()))
+                    .thenReturn(payloadHash);
 
-        // Then: Verify commit transaction request was sent to CMS
-        ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
-        
-        verify(restTemplate).postForEntity(urlCaptor.capture(), any(), eq(String.class));
-        
-        assertThat(urlCaptor.getValue()).isEqualTo("http://localhost:8080/api/transactions/999/commit");
+            when(processedEventService.isEventProcessed(eventId)).thenReturn(false);
+            when(processedEventService.isPayloadProcessed(payloadHash)).thenReturn(false);
+            when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+                    .thenReturn(ResponseEntity.ok("Success"));
+
+            // when
+            transactionEventService.processTransactionAuthorized(event);
+
+            // then
+            verify(processedEventService, times(1)).isEventProcessed(eventId);
+            verify(processedEventService, times(1)).isPayloadProcessed(payloadHash);
+            verify(processedEventService, times(1)).markEventAsProcessed(eventId, payloadHash, "SUCCESS");
+
+            ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
+            ArgumentCaptor<HttpEntity<?>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
+            verify(restTemplate, times(1)).postForEntity(urlCaptor.capture(), entityCaptor.capture(), eq(String.class));
+
+            assertThat(urlCaptor.getValue()).isEqualTo("http://localhost:8080/api/transactions/123/commit");
+            
+            @SuppressWarnings("unchecked")
+            HttpEntity<CommitTransactionRequest> capturedEntity = (HttpEntity<CommitTransactionRequest>) entityCaptor.getValue();
+            CommitTransactionRequest capturedRequest = capturedEntity.getBody();
+            assertThat(capturedRequest).isNotNull();
+            if (capturedRequest != null) {
+                assertThat(capturedRequest.getTransactionId()).isEqualTo(123L);
+                assertThat(capturedRequest.getHoldId()).isEqualTo(456L);
+            }
+        }
     }
 
     @Test
-    void processTransactionAuthorized_restTemplateFailure() {
-        // Given: RestTemplate throws exception
-        given(restTemplate.postForEntity(any(String.class), any(), eq(String.class)))
-                .willThrow(new RuntimeException("Network error"));
+    void shouldSkipProcessingWhenEventAlreadyProcessed() {
+        // given
+        TransactionAuthorizedEvent event = createTransactionAuthorizedEvent(123L, 456L);
+        String eventId = "transaction.authorized-123";
 
-        // When & Then: Should propagate the exception
-        assertThatThrownBy(() -> transactionEventService.processTransactionAuthorized(transactionAuthorizedEvent))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessage("Failed to send commit transaction request to CMS");
+        try (MockedStatic<EventIdGenerator> mockedGenerator = Mockito.mockStatic(EventIdGenerator.class)) {
+            mockedGenerator.when(() -> EventIdGenerator.generateEventId("transaction.authorized", 123L))
+                    .thenReturn(eventId);
+
+            when(processedEventService.isEventProcessed(eventId)).thenReturn(true);
+
+            // when
+            transactionEventService.processTransactionAuthorized(event);
+
+            // then
+            verify(processedEventService, times(1)).isEventProcessed(eventId);
+            verify(processedEventService, never()).isPayloadProcessed(anyString());
+            verify(processedEventService, never()).markEventAsProcessed(anyString(), anyString(), anyString());
+            verify(restTemplate, never()).postForEntity(anyString(), any(), any());
+        }
     }
 
     @Test
-    void processTransactionAuthorized_verifyRequestPayload() {
-        // Given: Mock successful response
-        given(restTemplate.postForEntity(any(String.class), any(), eq(String.class)))
-                .willReturn(ResponseEntity.ok("Success"));
+    void shouldSkipProcessingWhenPayloadAlreadyProcessed() {
+        // given
+        TransactionAuthorizedEvent event = createTransactionAuthorizedEvent(123L, 456L);
+        String eventId = "transaction.authorized-123";
+        String payloadHash = "hash123";
 
-        // When: Processing transaction authorized event
-        transactionEventService.processTransactionAuthorized(transactionAuthorizedEvent);
+        try (MockedStatic<EventIdGenerator> mockedGenerator = Mockito.mockStatic(EventIdGenerator.class)) {
+            mockedGenerator.when(() -> EventIdGenerator.generateEventId("transaction.authorized", 123L))
+                    .thenReturn(eventId);
+            mockedGenerator.when(() -> EventIdGenerator.generatePayloadHash(anyString()))
+                    .thenReturn(payloadHash);
 
-        // Then: Verify the REST call was made with correct URL and payload
-        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
-        verify(restTemplate).postForEntity(eq("http://localhost:8080/api/transactions/999/commit"), payloadCaptor.capture(), eq(String.class));
-        
-        // Verify the payload contains both transactionId and holdId
-        Object capturedPayload = payloadCaptor.getValue();
-        assertThat(capturedPayload).isNotNull();
+            when(processedEventService.isEventProcessed(eventId)).thenReturn(false);
+            when(processedEventService.isPayloadProcessed(payloadHash)).thenReturn(true);
+
+            // when
+            transactionEventService.processTransactionAuthorized(event);
+
+            // then
+            verify(processedEventService, times(1)).isEventProcessed(eventId);
+            verify(processedEventService, times(1)).isPayloadProcessed(payloadHash);
+            verify(processedEventService, never()).markEventAsProcessed(anyString(), anyString(), anyString());
+            verify(restTemplate, never()).postForEntity(anyString(), any(), any());
+        }
     }
 
     @Test
-    void processTransactionAuthorized_verifyRequestContainsHoldId() {
-        // Given: Mock successful response
-        given(restTemplate.postForEntity(any(String.class), any(), eq(String.class)))
-                .willReturn(ResponseEntity.ok("Success"));
+    void shouldMarkAsFailedWhenRestTemplateFails() {
+        // given
+        TransactionAuthorizedEvent event = createTransactionAuthorizedEvent(123L, 456L);
+        String eventId = "transaction.authorized-123";
+        String payloadHash = "hash123";
 
-        // When: Processing transaction authorized event
-        transactionEventService.processTransactionAuthorized(transactionAuthorizedEvent);
+        try (MockedStatic<EventIdGenerator> mockedGenerator = Mockito.mockStatic(EventIdGenerator.class)) {
+            mockedGenerator.when(() -> EventIdGenerator.generateEventId("transaction.authorized", 123L))
+                    .thenReturn(eventId);
+            mockedGenerator.when(() -> EventIdGenerator.generatePayloadHash(anyString()))
+                    .thenReturn(payloadHash);
 
-        // Then: Verify the REST call includes holdId in the request body
-        ArgumentCaptor<HttpEntity<?>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
-        verify(restTemplate).postForEntity(any(String.class), entityCaptor.capture(), eq(String.class));
-        
-        HttpEntity<?> capturedEntity = entityCaptor.getValue();
-        Object body = capturedEntity.getBody();
-        
-        assertThat(body).isInstanceOf(com.creditx.posting.dto.CommitTransactionRequest.class);
-        com.creditx.posting.dto.CommitTransactionRequest request = (com.creditx.posting.dto.CommitTransactionRequest) body;
-        assertThat(request)
-                .isNotNull()
-                .extracting("transactionId", "holdId")
-                .containsExactly(999L, 12345L);
+            when(processedEventService.isEventProcessed(eventId)).thenReturn(false);
+            when(processedEventService.isPayloadProcessed(payloadHash)).thenReturn(false);
+            doThrow(new RuntimeException("API call failed"))
+                    .when(restTemplate).postForEntity(anyString(), any(HttpEntity.class), eq(String.class));
+
+            // when & then
+            assertThatThrownBy(() -> transactionEventService.processTransactionAuthorized(event))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("Failed to send commit transaction request to CMS");
+
+            verify(processedEventService, times(1)).markEventAsProcessed(eventId, "", "FAILED");
+        }
+    }
+
+    @Test
+    void shouldMarkAsFailedWhenPayloadHashGenerationFails() {
+        // given
+        TransactionAuthorizedEvent event = createTransactionAuthorizedEvent(123L, 456L);
+        String eventId = "transaction.authorized-123";
+
+        try (MockedStatic<EventIdGenerator> mockedGenerator = Mockito.mockStatic(EventIdGenerator.class)) {
+            mockedGenerator.when(() -> EventIdGenerator.generateEventId("transaction.authorized", 123L))
+                    .thenReturn(eventId);
+            mockedGenerator.when(() -> EventIdGenerator.generatePayloadHash(anyString()))
+                    .thenThrow(new RuntimeException("Hash generation failed"));
+
+            when(processedEventService.isEventProcessed(eventId)).thenReturn(false);
+
+            // when & then
+            assertThatThrownBy(() -> transactionEventService.processTransactionAuthorized(event))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("Hash generation failed");
+
+            verify(processedEventService, times(1)).isEventProcessed(eventId);
+            verify(processedEventService, never()).isPayloadProcessed(anyString());
+            verify(processedEventService, times(1)).markEventAsProcessed(eventId, "", "FAILED");
+            verify(restTemplate, never()).postForEntity(anyString(), any(), any());
+        }
+    }
+
+    private TransactionAuthorizedEvent createTransactionAuthorizedEvent(Long transactionId, Long holdId) {
+        TransactionAuthorizedEvent event = new TransactionAuthorizedEvent();
+        event.setTransactionId(transactionId);
+        event.setHoldId(holdId);
+        return event;
     }
 }
