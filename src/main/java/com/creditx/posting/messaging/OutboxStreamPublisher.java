@@ -5,14 +5,11 @@ import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.messaging.Message;
 import org.springframework.stereotype.Service;
-import org.springframework.validation.annotation.Validated;
 
-import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
-@Validated
 @RequiredArgsConstructor
 @Slf4j
 public class OutboxStreamPublisher {
@@ -22,12 +19,23 @@ public class OutboxStreamPublisher {
     @Value("${app.outbox.binding}")
     private String bindingName;
 
-    public void publish(@NotNull String key, @NotNull String payload) {
-        log.debug("Publishing message to binding '{}' with key: {}", bindingName, key);
+    public void publish(String key, String payload, String eventType) {
+        // Validate inputs
+        if (key == null || payload == null || payload.trim().isEmpty()) {
+            log.debug("Skipping publish - invalid key or payload. Key: {}, Payload: {}", key, payload);
+            return;
+        }
+        if (eventType == null || eventType.trim().isEmpty()) {
+            log.debug("Skipping publish - invalid eventType: {}", eventType);
+            return;
+        }
 
+        log.debug("Publishing message to binding '{}' with key: {}", bindingName, key);
+        
         Message<String> message = MessageBuilder
                 .withPayload(payload)
                 .setHeader("key", key)
+                .setHeader("eventType", eventType)
                 .build();
 
         try {
